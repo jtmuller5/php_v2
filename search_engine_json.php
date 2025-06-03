@@ -7,7 +7,10 @@ require_once('SearchEngine/Term.php');
 require_once('SearchEngine/QueryUtil.php');
 require_once('SearchEngine/Page.php');
 require_once("access_db.php");
-
+?>
+<!-- Google Analytics Tracking -->  
+<?php include_once("analytics.php") ?>
+<?php
 function getClientIP() {
     if (!empty($_SERVER['HTTP_X_FORWARDED_FOR'])) {
         $ip = $_SERVER['HTTP_X_FORWARDED_FOR'];
