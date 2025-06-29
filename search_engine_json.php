@@ -11,6 +11,41 @@ require_once("access_db.php");
 <!-- Google Analytics Tracking -->  
 <?php include_once("analytics.php") ?>
 <?php
+
+function validateToken($conn, $plain_token) {
+    $token_hash = hash('sha256', $plain_token);
+
+    $stmt = $conn->prepare("SELECT * FROM api_tokens WHERE token_hash = ? AND is_active = 1 AND expires_at > NOW()");
+    $stmt->bind_param("s", $token_hash);
+    $stmt->execute();
+    $result = $stmt->get_result();
+
+    if ($row = $result->fetch_assoc()) {
+        // Update last_used timestamp
+        $update = $conn->prepare("UPDATE api_tokens SET last_used = NOW() WHERE id = ?");
+        $update->bind_param("i", $row['id']);
+        $update->execute();
+        return true;
+    }
+    return false;
+}
+
+$headers = apache_request_headers();
+$authHeader = $headers['Authorization'] ?? '';
+
+if (!preg_match('/Bearer\s+(.+)/', $authHeader, $matches)) {
+    http_response_code(401);
+    echo json_encode(["error" => "Missing or malformed Authorization header."]);
+    exit;
+}
+
+$plain_token = $matches[1];
+if (!validateToken($conn, $plain_token)) {
+    http_response_code(403);
+    echo json_encode(["error" => "Invalid or expired token."]);
+    exit;
+}
+
 function getClientIP() {
     if (!empty($_SERVER['HTTP_X_FORWARDED_FOR'])) {
         $ip = $_SERVER['HTTP_X_FORWARDED_FOR'];
