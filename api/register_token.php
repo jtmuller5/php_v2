@@ -74,7 +74,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $stmt->bind_param("sss", $email, $token_hash, $expires);
     $stmt->execute();
 
-    echo "Your token (save securely): <code>$plain_token</code>";
+    echo "Your token (save securely): <code>$plain_token </code>.";
     send_email_to_user($email, $plain_token);
 }
 

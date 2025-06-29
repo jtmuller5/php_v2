@@ -1,4 +1,6 @@
 <?php
+ob_start();          // Optional: helps buffer output to avoid header issues
+session_start();  
 require_once("SearchEngine/ParenthesisParser.php");
 require_once("SearchEngine/NeuronConnection.php");
 require_once('SearchEngine/Parser.php');
@@ -12,38 +14,26 @@ require_once("access_db.php");
 <?php include_once("analytics.php") ?>
 <?php
 
-function validateToken($conn, $plain_token) {
-    $token_hash = hash('sha256', $plain_token);
+header('Content-Type: application/json');
 
-    $stmt = $conn->prepare("SELECT * FROM api_tokens WHERE token_hash = ? AND is_active = 1 AND expires_at > NOW()");
-    $stmt->bind_param("s", $token_hash);
-    $stmt->execute();
-    $result = $stmt->get_result();
+// --- Get Bearer Token Function (for Apache & Nginx) ---
+function getBearerToken(): ?string {
+    $headers = [];
 
-    if ($row = $result->fetch_assoc()) {
-        // Update last_used timestamp
-        $update = $conn->prepare("UPDATE api_tokens SET last_used = NOW() WHERE id = ?");
-        $update->bind_param("i", $row['id']);
-        $update->execute();
-        return true;
+    if (function_exists('apache_request_headers')) {
+        $headers = apache_request_headers();
+        $auth = $headers['Authorization'] ?? $headers['authorization'] ?? null;
     }
-    return false;
-}
 
-$headers = apache_request_headers();
-$authHeader = $headers['Authorization'] ?? '';
+    $auth = $auth ??
+            $_SERVER['HTTP_AUTHORIZATION'] ??
+            $_SERVER['REDIRECT_HTTP_AUTHORIZATION'] ?? null;
 
-if (!preg_match('/Bearer\s+(.+)/', $authHeader, $matches)) {
-    http_response_code(401);
-    echo json_encode(["error" => "Missing or malformed Authorization header."]);
-    exit;
-}
+    if ($auth && preg_match('/Bearer\s(\S+)/', $auth, $matches)) {
+        return $matches[1];
+    }
 
-$plain_token = $matches[1];
-if (!validateToken($conn, $plain_token)) {
-    http_response_code(403);
-    echo json_encode(["error" => "Invalid or expired token."]);
-    exit;
+    return null;
 }
 
 function getClientIP() {
@@ -63,16 +53,59 @@ function getClientIP() {
     return $ip;
 }
 
-$user_agent = $_SERVER['HTTP_USER_AGENT'];
-$query_str = isset($_GET['query_str']) ? trim($_GET['query_str']) : '';
+function validateToken($conn, $plain_token) {
+    $token_hash = hash('sha256', $plain_token);
+
+    $stmt = $conn->prepare("SELECT * FROM api_tokens WHERE token_hash = ? AND is_active = 1 AND expires_at > NOW()");
+    $stmt->bind_param("s", $token_hash);
+    $stmt->execute();
+    $result = $stmt->get_result();
+
+    if ($row = $result->fetch_assoc()) {
+        // Update last_used timestamp
+        $update = $conn->prepare("UPDATE api_tokens SET last_used = NOW() WHERE id = ?");
+        $update->bind_param("i", $row['id']);
+        $update->execute();
+        return true;
+    }
+    return false;
+}
+
+
+// --- Unified Input Handling ---
+$requestMethod = $_SERVER['REQUEST_METHOD'];
+$query_str = '';
+if ($requestMethod === 'POST') {
+    $query_str = trim($_POST['query_str'] ?? '');
+} elseif ($requestMethod === 'GET') {
+    $query_str = trim($_GET['query_str'] ?? '');
+}
 
 if (empty($query_str)) {
     echo json_encode(["error" => "Query string cannot be empty."]);
     exit;
 }
+
+// --- Get and Validate Token ---
+$token = getBearerToken();
+if (!$token) {
+    http_response_code(401);
+    echo json_encode(["error" => "Missing or invalid Authorization token."]);
+    exit;
+}
+
+if (!validateToken($conn, $token)) {
+    http_response_code(403);
+    echo json_encode(["error" => "Invalid or expired token."]);
+    exit;
+}
+
 try{
-	$requestType = $_SERVER['REQUEST_METHOD']; //echo "Request Type:".$requestType;
-	$requestData = json_encode($_REQUEST['query_str']); //echo "Request Data:".$requestData;
+
+	//$requestType = $_SERVER['REQUEST_METHOD']; //echo "Request Type:".$requestType;
+	//$requestData = json_encode($_REQUEST['query_str']); //echo "Request Data:".$requestData;
+	$requestType =$requestMethod;
+	$requestData = $query_str;
 	$clientIP = getClientIP(); //echo "Client IP:".$clientIP;
 	$requestURI = $_SERVER["REQUEST_URI"]; //echo "Request URI:".$requestURI;
 	$returnType = "JSON"; //echo "Return Type:".$returnType;
