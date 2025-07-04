@@ -56,21 +56,36 @@ function getClientIP() {
 function validateToken($conn, $plain_token) {
     $token_hash = hash('sha256', $plain_token);
 
-    $stmt = $conn->prepare("SELECT * FROM api_tokens WHERE token_hash = ? AND is_active = 1 AND expires_at > NOW()");
+    // First fetch the token
+    $stmt = $conn->prepare("SELECT id, expires_at FROM api_tokens WHERE token_hash = ? AND is_active = 1");
     $stmt->bind_param("s", $token_hash);
     $stmt->execute();
     $result = $stmt->get_result();
 
     if ($row = $result->fetch_assoc()) {
-        // Update last_used timestamp
+        $expires_at = new DateTime($row['expires_at']);
+        $now = new DateTime();
+
+        if ($expires_at < $now) {
+            // Token expired — deactivate it
+            $deactivate = $conn->prepare("UPDATE api_tokens SET is_active = 0 WHERE id = ?");
+            $deactivate->bind_param("i", $row['id']);
+            $deactivate->execute();
+
+            return false;
+        }
+
+        // Token is valid — update last_used timestamp
         $update = $conn->prepare("UPDATE api_tokens SET last_used = NOW() WHERE id = ?");
         $update->bind_param("i", $row['id']);
         $update->execute();
+
         return true;
     }
+
+    // Token not found or inactive
     return false;
 }
-
 
 // --- Unified Input Handling ---
 $requestMethod = $_SERVER['REQUEST_METHOD'];
@@ -96,7 +111,7 @@ if (!$token) {
 
 if (!validateToken($conn, $token)) {
     http_response_code(403);
-    echo json_encode(["error" => "Invalid or expired token."]);
+    echo json_encode(["error" => "Invalid or expired token. Please generate new token at https://hippocampome.org/php/api/register_token.php"]);
     exit;
 }
 
