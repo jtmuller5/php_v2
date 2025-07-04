@@ -101,9 +101,14 @@ if($email){
 	    $created = $now->format('Y-m-d H:i:s');
 	    $expires = $now->modify('+30 days')->format('Y-m-d H:i:s');
 
+	    //make old tokens inactive
+	    $update_stmt = $conn->prepare("UPDATE api_tokens SET is_active = 0 WHERE email = ?");
+	    $update_stmt->bind_param("s", $email);
+	    $update_stmt->execute();
+
 	    // Insert or update token
-	    $stmt = $conn->prepare("INSERT INTO api_tokens (email, token_hash, created_at, expires_at)
-			    VALUES (?, ?, ?, ?)
+	    $stmt = $conn->prepare("INSERT INTO api_tokens (email, token_hash, created_at, expires_at, is_active)
+			    VALUES (?, ?, ?, ?, 1)
 			    ON DUPLICATE KEY UPDATE token_hash = VALUES(token_hash), created_at = VALUES(created_at), expires_at = VALUES(expires_at)");
 	    $stmt->bind_param("ssss", $email, $token_hash, $created, $expires);
 	    $stmt->execute();
