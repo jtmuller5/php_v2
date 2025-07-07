@@ -29,36 +29,6 @@ function generateToken($length = 64) {
     return bin2hex(random_bytes($length / 2)); // returns a 64-char token
 }
 
-function send_email_to_user($email, $plain_token){
-    echo "Token sent to your email.";
-	$to = $email; // user-provided email address
-	$subject = "Your API Access Token for Hippocampome.org";
-	$message = "
-		Hello,
-
-		Here is your API token. Please save it securely. It will not be shown again.
-
-			Token: $plain_token
-
-			You can now use this token in your API requests with the header:
-			Authorization: Bearer $plain_token
-
-			Regards,
-		Your Hippocampome API Team
-			";
-
-	$headers = "From: knadella@gmu.edu\r\n";
-	//$headers .= "Reply-To: knadella@gmu.edu\r\n";
-	//$headers .= "X-Mailer: PHP/" . phpversion();
-
-	$mail_sent = mail($to, $subject, $message, $headers);
-
-	if ($mail_sent) {
-		echo "A secure API token has been sent to <strong>$email</strong>.";
-	} else {
-		echo "Failed to send email. Please try again.";
-	}
-}
 $email =''; 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $email = trim($_POST['email']);
@@ -88,7 +58,7 @@ if($email){
     if ($row && !$force) {
 	    $expires_at = new DateTime($row['expires_at']);
 	    if ($expires_at > $now) {
-		    echo "A valid token already exists. Please contact knadella@gmu.edu. Please send your email- as that will be used to generate token. </br>";
+		    echo "A valid token already exists. Please contact hcadmin@gmu.edu. Please send your email that used iniially,  as that will be used to verify and generate token. </br>";
 //Please use it or force a new one with &force=true.</br>";
 		    $token_valid = true;
 	    }
@@ -113,8 +83,7 @@ if($email){
 	    $stmt->bind_param("ssss", $email, $token_hash, $created, $expires);
 	    $stmt->execute();
 	    echo "Your token (save securely): <code>$plain_token</code> </br>";
-	    // Send token by email
-	    send_email_to_user($email, $plain_token);
+
 	    echo '</br> </br> Please <a href="../index.php"> go back to index page</a> or <a href="./register_token.php"> register email page</a>';
     }
 
