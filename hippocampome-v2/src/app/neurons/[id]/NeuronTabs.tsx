@@ -256,59 +256,240 @@ function OverviewTab({
   );
 }
 
+// Well-known marker abbreviation expansions
+const MARKER_NAMES: Record<string, string> = {
+  CB: "Calbindin",
+  CR: "Calretinin",
+  PV: "Parvalbumin",
+  CCK: "Cholecystokinin",
+  SOM: "Somatostatin",
+  VIP: "Vasoactive Intestinal Polypeptide",
+  NPY: "Neuropeptide Y",
+  nNOS: "Neuronal Nitric Oxide Synthase",
+  ENK: "Enkephalin",
+  RLN: "Reelin",
+  "5HT-3": "Serotonin Receptor 3",
+  CB1: "Cannabinoid Receptor Type 1",
+  "GABAa α1": "GABA-A Alpha 1 Subunit",
+  mGluR1a: "Metabotropic Glutamate Receptor 1α",
+  Mus2R: "Muscarinic Type 2 Receptor",
+  vGluT3: "Vesicular Glutamate Transporter 3",
+};
+
+// Categorize properties by their semantic meaning
+function categorizeProperties(morphology: MorphologyItem[]) {
+  const markers: { subject: string; values: Map<string, number> }[] = [];
+  const locations: { subject: string; predicate: string; object: string }[] = [];
+  const other: { subject: string; predicate: string; object: string }[] = [];
+
+  // Group by subject first
+  const bySubject = new Map<string, MorphologyItem[]>();
+  morphology.forEach((m) => {
+    const prop = getProperty(m);
+    if (!prop) return;
+    if (!bySubject.has(prop.subject)) bySubject.set(prop.subject, []);
+    bySubject.get(prop.subject)!.push(m);
+  });
+
+  bySubject.forEach((items, subject) => {
+    const firstProp = getProperty(items[0]);
+    if (!firstProp) return;
+
+    if (firstProp.predicate === "has expression") {
+      // Molecular marker — aggregate expression values
+      const counts = new Map<string, number>();
+      items.forEach((m) => {
+        const p = getProperty(m);
+        if (p) counts.set(p.object, (counts.get(p.object) ?? 0) + 1);
+      });
+      markers.push({ subject, values: counts });
+    } else if (
+      firstProp.predicate === "in" ||
+      firstProp.predicate === "has location" ||
+      firstProp.predicate === "located in"
+    ) {
+      // Morphological location data
+      items.forEach((m) => {
+        const p = getProperty(m);
+        if (p) locations.push({ subject: p.subject, predicate: p.predicate, object: p.object });
+      });
+    } else {
+      items.forEach((m) => {
+        const p = getProperty(m);
+        if (p) other.push({ subject: p.subject, predicate: p.predicate, object: p.object });
+      });
+    }
+  });
+
+  return { markers, locations, other };
+}
+
 function MorphologyTab({
   morphology,
 }: {
   morphology: NeuronTabsProps["morphology"];
 }) {
-  const subjects = new Map<string, typeof morphology>();
-  morphology.forEach((m) => {
-    const prop = getProperty(m);
-    if (!prop) return;
-    const key = prop.subject;
-    if (!subjects.has(key)) subjects.set(key, []);
-    subjects.get(key)!.push(m);
+  const { markers, locations, other } = categorizeProperties(morphology);
+
+  // Deduplicate locations
+  const uniqueLocations = Array.from(
+    new Map(
+      locations.map((l) => [`${l.subject}-${l.predicate}-${l.object}`, l])
+    ).values()
+  );
+
+  // Group locations by subject (axon, dendrite, soma)
+  const locationGroups = new Map<string, typeof uniqueLocations>();
+  uniqueLocations.forEach((l) => {
+    if (!locationGroups.has(l.subject)) locationGroups.set(l.subject, []);
+    locationGroups.get(l.subject)!.push(l);
   });
+
+  // Deduplicate other
+  const uniqueOther = Array.from(
+    new Map(
+      other.map((o) => [`${o.subject}-${o.predicate}-${o.object}`, o])
+    ).values()
+  );
+
+  if (markers.length === 0 && uniqueLocations.length === 0 && uniqueOther.length === 0) {
+    return <p className="text-gray-500">No morphology data available.</p>;
+  }
 
   return (
     <div className="space-y-6">
-      {Array.from(subjects.entries()).map(([subject, props]) => (
-        <div
-          key={subject}
-          className="rounded-xl border border-gray-200 bg-white p-6"
-        >
-          <h3 className="text-lg font-semibold capitalize text-gray-900">
-            {subject}
+      {/* Molecular Markers */}
+      {markers.length > 0 && (
+        <div className="rounded-xl border border-gray-200 bg-white p-6">
+          <h3 className="text-lg font-semibold text-gray-900">
+            Molecular Markers
+          </h3>
+          <p className="mt-1 text-sm text-gray-400">
+            Expression of molecular biomarkers based on literature evidence
+          </p>
+          <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            {markers.map(({ subject, values }) => {
+              // Determine consensus
+              const positive = (values.get("positive") ?? 0) + (values.get("weak_positive") ?? 0);
+              const negative = values.get("negative") ?? 0;
+              const total = positive + negative;
+              const isPositive = positive > negative;
+              const isMixed = positive > 0 && negative > 0;
+
+              return (
+                <div
+                  key={subject}
+                  className={`rounded-lg border p-4 ${
+                    isMixed
+                      ? "border-yellow-200 bg-yellow-50"
+                      : isPositive
+                        ? "border-green-200 bg-green-50"
+                        : "border-red-200 bg-red-50"
+                  }`}
+                >
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="text-sm font-semibold text-gray-900">
+                        {subject}
+                      </p>
+                      {MARKER_NAMES[subject] && (
+                        <p className="text-xs text-gray-500">
+                          {MARKER_NAMES[subject]}
+                        </p>
+                      )}
+                    </div>
+                    <span
+                      className={`rounded-full px-2.5 py-0.5 text-xs font-semibold ${
+                        isMixed
+                          ? "bg-yellow-200 text-yellow-800"
+                          : isPositive
+                            ? "bg-green-200 text-green-800"
+                            : "bg-red-200 text-red-800"
+                      }`}
+                    >
+                      {isMixed ? "Mixed" : isPositive ? "Positive" : "Negative"}
+                    </span>
+                  </div>
+                  {total > 1 && (
+                    <p className="mt-2 text-xs text-gray-500">
+                      {positive} positive, {negative} negative across{" "}
+                      {total} evidence records
+                    </p>
+                  )}
+                  {values.has("weak_positive") && (
+                    <p className="mt-1 text-xs text-gray-400">
+                      Includes {values.get("weak_positive")} weak positive
+                    </p>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* Morphological Locations */}
+      {locationGroups.size > 0 && (
+        <div className="rounded-xl border border-gray-200 bg-white p-6">
+          <h3 className="text-lg font-semibold text-gray-900">
+            Morphological Features
+          </h3>
+          <p className="mt-1 text-sm text-gray-400">
+            Location of neuronal structures across hippocampal layers
+          </p>
+          <div className="mt-4 space-y-4">
+            {Array.from(locationGroups.entries()).map(
+              ([structure, locs]) => (
+                <div key={structure}>
+                  <p className="text-sm font-semibold capitalize text-gray-700">
+                    {structure}
+                  </p>
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    {locs.map((l, i) => (
+                      <span
+                        key={i}
+                        className="inline-flex items-center rounded-lg bg-blue-50 px-3 py-1 text-sm text-blue-700"
+                      >
+                        {l.object}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Other Properties */}
+      {uniqueOther.length > 0 && (
+        <div className="rounded-xl border border-gray-200 bg-white p-6">
+          <h3 className="text-lg font-semibold text-gray-900">
+            Other Properties
           </h3>
           <table className="mt-4 w-full text-sm">
             <thead>
               <tr className="border-b border-gray-100 text-left text-gray-500">
-                <th className="pb-2 font-medium">Predicate</th>
-                <th className="pb-2 font-medium">Object</th>
-                <th className="pb-2 font-medium">Priority</th>
+                <th className="pb-2 font-medium">Feature</th>
+                <th className="pb-2 font-medium">Property</th>
+                <th className="pb-2 font-medium">Value</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-50">
-              {props.map((p) => {
-                const prop = getProperty(p);
-                return (
-                  <tr key={p.id}>
-                    <td className="py-2 text-gray-700">
-                      {prop?.predicate}
-                    </td>
-                    <td className="py-2 text-gray-900 font-medium">
-                      {prop?.object}
-                    </td>
-                    <td className="py-2 text-gray-400">{p.priority ?? "\u2014"}</td>
-                  </tr>
-                );
-              })}
+              {uniqueOther.map((o, i) => (
+                <tr key={i}>
+                  <td className="py-2 capitalize text-gray-700">
+                    {o.subject}
+                  </td>
+                  <td className="py-2 text-gray-600">{o.predicate}</td>
+                  <td className="py-2 font-medium text-gray-900">
+                    {o.object}
+                  </td>
+                </tr>
+              ))}
             </tbody>
           </table>
         </div>
-      ))}
-      {subjects.size === 0 && (
-        <p className="text-gray-500">No morphology data available.</p>
       )}
     </div>
   );

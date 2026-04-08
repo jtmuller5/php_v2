@@ -115,13 +115,15 @@ export default async function NeuronPage({ params }: PageProps) {
         <StatCard
           label="Population"
           value={
-            neuron.population
-              ? formatPopulation(
-                  neuron.population.count_value,
-                  neuron.population.lower_bound,
-                  neuron.population.upper_bound
-                )
+            neuron.population?.count_value != null
+              ? neuron.population.count_value.toLocaleString()
               : "\u2014"
+          }
+          sublabel={
+            neuron.population?.lower_bound != null &&
+            neuron.population?.upper_bound != null
+              ? `${neuron.population.lower_bound.toLocaleString()}\u2013${neuron.population.upper_bound.toLocaleString()}`
+              : undefined
           }
         />
         <StatCard
