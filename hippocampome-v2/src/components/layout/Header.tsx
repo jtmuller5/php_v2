@@ -7,6 +7,7 @@ import { SearchBar } from "@/components/search/SearchBar";
 const NAV_LINKS = [
   { href: "/neurons", label: "Neurons" },
   { href: "/connectivity", label: "Connectivity" },
+  { href: "/simulate", label: "Simulate" },
   { href: "/articles", label: "Articles" },
   { href: "/authors", label: "Authors" },
   { href: "/explore", label: "Explore" },
